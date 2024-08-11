@@ -114,11 +114,13 @@ def search_restaurant(restaurant_name):
             restaurant_adr = ""
 
         restaurant_name = name_tag.text.strip()
-        name_tag.click()
+        place_bluelink.click()
         time.sleep(0.5)
         current_url = driver.current_url
+        print(current_url)
         number = extract_number_from_pattern(current_url)
         restaurants.append((number, restaurant_name, restaurant_adr))
+        print((number, restaurant_name, restaurant_adr))
         # break
 
     driver.close()
