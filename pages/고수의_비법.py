@@ -19,6 +19,11 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 import pandas as pd
 from openai import OpenAI
+from dotenv import load_dotenv
+import os
+
+# .env 파일 로드
+load_dotenv()
 
 # Title of the app
 st.title("Solar Tycoon (Jeju Ver. 🏝️)")
@@ -95,7 +100,7 @@ if "review_prepared" not in st.session_state:
 
 def stream_message(review_df, user_message):
     client = OpenAI(
-        api_key="up_xPYsCK4N53bp1LFE6wV4L8MhvAh9J",
+        api_key=os.getenv('UPSTAGE_API_KEY'),
         base_url="https://api.upstage.ai/v1/solar"
     )
 
