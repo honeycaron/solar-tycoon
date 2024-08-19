@@ -1,12 +1,6 @@
-from wordcloud import WordCloud
-from PIL import Image
-import numpy as np
-import matplotlib.pyplot as plt
 import streamlit as st
-from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from webdriver_manager.chrome import ChromeDriverManager
 import re
 from selenium.webdriver.common.by import By
 from urllib3.util.retry import Retry
@@ -16,7 +10,6 @@ from selenium import webdriver
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.common.keys import Keys
 import time
-import datetime
 import requests
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
@@ -26,6 +19,26 @@ from dotenv import load_dotenv
 import os
 import json
 import altair as alt
+import logging
+from langchain_upstage import UpstageEmbeddings
+import httpx
+
+user_logger = logging.getLogger('user_questions')
+
+if not user_logger.hasHandlers():
+    user_logger.setLevel(logging.INFO)
+    handler = logging.FileHandler('user_questions.log')
+    formatter = logging.Formatter('%(asctime)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+    handler.setFormatter(formatter)
+
+    user_logger.addHandler(handler)
+
+
+# Function to log user questions
+def log_user_question(question):
+    user_logger.info(f"User Question: {question}")
+
+
 
 # .env 파일 로드
 load_dotenv()
@@ -50,9 +63,7 @@ else:
             # {"role": "assistant", "content": "Hello, please enter the name of the place you're interested in! 🍽️"})
             {"role": "assistant", "content": starting_message})
 
-
-
-print("1.messages", st.session_state.messages)
+# print("1.messages", st.session_state.messages)
 # Display chat messages from history on app rerun
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
@@ -61,9 +72,9 @@ for message in st.session_state.messages:
         else:
             st.dataframe(message["content"])
 
-
 if "rec_button_clicked" not in st.session_state:
     st.session_state.rec_button_clicked = False
+
 
 def click_button(name, num):
     st.session_state.messages.append({"role": "assistant", "content": f"선택하신 업체명은 다음과 같습니다 : {name}"})
@@ -73,7 +84,6 @@ def click_button(name, num):
     if "place_num" not in st.session_state:
         st.session_state.place_num = num
 
-
     st.session_state.messages.append({"role": "assistant", "content": "리뷰를 수집하겠습니다."})
 
 
@@ -81,6 +91,7 @@ def rec_click_button(user_message):
     st.session_state.rec_button_clicked = True
     st.session_state.rec_question = user_message
     st.session_state.rec_q_list.remove(user_message)
+
 
 def extract_number_from_pattern(text):
     # Define the regex pattern to match /place/{number}
@@ -207,7 +218,6 @@ def get_review(place_num):
     raw_df = pd.DataFrame(row_list, columns=['nickname', 'content', 'date', 'visit_cnt'])
     raw_df = raw_df[raw_df['content'].str.len() > 0].reset_index(drop=True)
 
-
     return raw_df
 
 
@@ -252,7 +262,7 @@ def classify_review(review):
         raise ValueError("Error in parsing response: " + str(e))
 
 
-def stream_message(review_df, user_message):
+def stream_message(review, user_message):
     client = OpenAI(
         api_key=os.getenv('UPSTAGE_API_KEY'),
         base_url="https://api.upstage.ai/v1/solar"
@@ -272,7 +282,7 @@ def stream_message(review_df, user_message):
 
                 ###
                 업체명 : {st.session_state.place_name}
-                리뷰 정보 : {str(review_df['content'].to_list())}
+                리뷰 정보 : {review}
                 ###
 
                 ```
@@ -308,17 +318,15 @@ def extract_positive_keywords(review_df):
             {
                 "role": "user",
                 "content": f"""
-                ###로 감싸진 참고 정보를 활용하여, ```로 리뷰 정보에서 긍정적인 의견을 7개 추출하고 이를 JSON으로 반환하세요.
+                ###로 감싸진 참고 정보를 활용하여 긍정적인 의견을 7개 추출하고 이를 JSON으로 반환하세요.
 
                 ###
-                업체명 : {st.session_state.place_name}
+                - 업체명 : {st.session_state.place_name}
+                - 리뷰 정보 : {str(review_df[review_df['sentiment'] == 'positive']['content'].to_list())}
                 ###
-
-                ```
-                리뷰 정보 : {str(review_df[review_df['sentiment']=='positive']['content'].to_list())}
-                ```
                  반드시 별도의 설명없이 'k1', 'k2', 'k3', 'k4','k5', 'k6', 'k7'을 Key값으로 갖는 JSON만 반환하세요.
-        
+
+                각 Key별 의견은 반드시 예시와 같이 핵심 키워드 위주로 한 문장 길이로 답변해주세요.
                 답변 예시는 다음과 같습니다.
                 {{
                   "k1": "커피와 빵이 맛있음",
@@ -329,7 +337,16 @@ def extract_positive_keywords(review_df):
                   "k6": "포토존과 인테리어가 좋음",
                   "k7": "주변 경치가 멋있음"
                 }}
-                각 Key별 의견은 반드시 예시와 같이 핵심 키워드 위주로 한 문장 길이로 답변해주세요.
+                긍정적인 리뷰 정보가 없는 경우 반드시 아래와 같이 답변하세요.
+                {{
+                  "k1": "없음",
+                  "k2": "없음",
+                  "k3": "없음",
+                  "k4": "없음",
+                  "k5": "없음",
+                  "k6": "없음",
+                  "k7": "없음"
+                }}
                 """
             }
         ],
@@ -364,17 +381,15 @@ def extract_negative_keywords(review_df):
             {
                 "role": "user",
                 "content": f"""
-                ###로 감싸진 참고 정보를 활용하여, ```로 리뷰 정보에서 부정적인 의견을 7개 추출하고 이를 JSON으로 반환하세요.
+                ###로 감싸진 참고 정보를 활용하여 부정적인 의견을 7개 추출하고 이를 JSON으로 반환하세요.
 
                 ###
-                업체명 : {st.session_state.place_name}
+                - 업체명 : {st.session_state.place_name}
+                - 리뷰 정보 : {str(review_df[review_df['sentiment'] == 'negative']['content'].to_list())}
                 ###
-
-                ```
-                리뷰 정보 : {str(review_df[review_df['sentiment'] == 'negative']['content'].to_list())}
-                ```
                  반드시 별도의 설명없이 'k1', 'k2', 'k3', 'k4','k5', 'k6', 'k7'을 Key값으로 갖는 JSON만 반환하세요.
 
+                각 Key별 의견은 반드시 예시와 같이 핵심 키워드 위주로 한 문장 길이로 답변해주세요.
                 답변 예시는 다음과 같습니다.
                 {{
                   "k1": "가격이 비쌈",
@@ -385,7 +400,16 @@ def extract_negative_keywords(review_df):
                   "k6": "주차비가 비쌈",
                   "k7": "혼잡함과 대기 시간이 김"
                 }}
-                각 Key별 의견은 반드시 예시와 같이 핵심 키워드 위주로 한 문장 길이로 답변해주세요.
+                부정적인 리뷰 정보가 없는 경우 반드시 아래와 같이 답변하세요.
+                {{
+                  "k1": "없음",
+                  "k2": "없음",
+                  "k3": "없음",
+                  "k4": "없음",
+                  "k5": "없음",
+                  "k6": "없음",
+                  "k7": "없음"
+                }}
                 """
             }
         ],
@@ -402,6 +426,8 @@ def extract_negative_keywords(review_df):
         full_response = full_response.replace("```", "")
 
     return full_response
+
+
 def safe_eval(expression):
     while True:
         try:
@@ -410,6 +436,8 @@ def safe_eval(expression):
             return result
         except Exception as e:
             print(f"An error occurred: {e}. Retrying...")
+
+
 def sentiment_color(val):
     if val == 'positive':
         color = 'green'
@@ -421,8 +449,9 @@ def sentiment_color(val):
         color = 'white'
     return f'background-color: {color}'
 
+
 def plot_sentiment_ratio_per_week(df):
-    df['date'] = pd.to_datetime(df['date'].apply(lambda x: f'2024.{x[:3]}'), format='%Y.%m.%d')
+    df['date'] = pd.to_datetime(df['date'].apply(lambda x: f"2024.{'.'.join(x.split('.')[:2])}"), format='%Y.%m.%d')
 
     df['week'] = df['date'].dt.isocalendar().week
 
@@ -451,9 +480,10 @@ def plot_sentiment_ratio_per_week(df):
 
     st.altair_chart(chart, use_container_width=True)
 
+
 def plot_sentiment_ratio_per_day(df):
     # Convert date to a proper datetime format (assuming the year is 2024)
-    df['date'] = pd.to_datetime(df['date'].apply(lambda x: f'2024.{x[:3]}'), format='%Y.%m.%d')
+    df['date'] = pd.to_datetime(df['date'].apply(lambda x: f"2024.{'.'.join(x.split('.')[:2])}"), format='%Y.%m.%d')
 
     # Group by date and sentiment to get counts
     daily_sentiment = df.groupby(['date', 'sentiment']).size().reset_index(name='count')
@@ -484,11 +514,47 @@ def plot_sentiment_ratio_per_day(df):
     # Display the chart in Streamlit
     st.altair_chart(chart, use_container_width=True)
 
+
+def search_reviews(query):
+    if "vector_store" not in st.session_state:
+        st.error("No vector store found. Please ensure review data has been indexed.")
+        return
+
+    # Use the stored vector store to perform the search
+    search_results = st.session_state.vector_store.similarity_search(query, k=50)
+
+    return search_results
+
 if "review_prepared" not in st.session_state:
     if "place_num" in st.session_state:
         with st.chat_message("assistant"):
             with st.spinner("리뷰 수집중..."):
                 df = get_review(st.session_state.place_num)
+
+                # Code to save df to ChromaDB vectorstore
+                from langchain_community.vectorstores import Chroma
+                from langchain.schema import Document
+                from datetime import datetime
+
+
+                # Create a list of LangChain Document objects from the DataFrame
+                documents = [Document(page_content=row["content"],
+                                      metadata={"nickname": row["nickname"], "date": row["date"],
+                                                "visit_cnt": row["visit_cnt"]}) for _, row in df.iterrows()]
+
+                # Determine the index name using the restaurant name and current time
+                index_name = f"db_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
+                embeddings = UpstageEmbeddings(
+                api_key=os.getenv('UPSTAGE_API_KEY'),
+                model="solar-embedding-1-large",
+                http_client=httpx.Client(verify=False)
+                )
+                # Save the documents to the ChromaDB vectorstore
+                vector_store = Chroma.from_documents(documents=documents, embedding=embeddings,
+                                                     collection_name=index_name)
+                st.session_state.vector_store = vector_store
+                # st.success("Review data has been saved to the vector store successfully!")
+
             st.markdown("아래와 같이 리뷰 데이터를 수집하였습니다.")
             st.dataframe(df)
             st.markdown("수집된 리뷰에서 궁금하신 점을 물어보세요!")
@@ -504,7 +570,6 @@ if "review_prepared" not in st.session_state:
             for q in st.session_state.rec_q_list:
                 st.button(q, on_click=rec_click_button, args=[q])
 
-
 if st.session_state.rec_button_clicked:
     st.session_state.rec_button_clicked = False
     user_message = st.session_state.rec_question
@@ -514,15 +579,28 @@ if st.session_state.rec_button_clicked:
     with st.chat_message("assistant"):
         if "감성" in user_message:
             with st.spinner("감성 분석 보고서 생성 중..."):
-                st.session_state.review_df["sentiment"] = [classify_review(x) for x in st.session_state.review_df["content"].to_list()]
+                st.session_state.review_df["sentiment"] = [classify_review(x) for x in
+                                                           st.session_state.review_df["content"].to_list()]
                 st.markdown(f"{st.session_state.place_name}에 대한 감성 분석 보고서입니다!")
                 st.markdown(f"#### 리뷰별 감성 분석 결과 (Solar Mini 파인튜닝 모델 사용)")
-                styled_df = st.session_state.review_df[['content', 'sentiment']].style.applymap(sentiment_color, subset=['sentiment'])
+                styled_df = st.session_state.review_df[['content', 'sentiment']].style.applymap(sentiment_color,
+                                                                                                subset=['sentiment'])
                 st.dataframe(styled_df)
 
                 st.divider()
-                positive_keywords = safe_eval("extract_positive_keywords(st.session_state.review_df)")
-                negative_keywords = safe_eval("extract_negative_keywords(st.session_state.review_df)")
+                if len(st.session_state.review_df[st.session_state.review_df['sentiment'] == 'positive']) > 0:
+                    positive_keywords = safe_eval("extract_positive_keywords(st.session_state.review_df)")
+                else:
+                    positive_keywords = {
+                        "k1": "없음", "k2": "없음", "k3": "없음", "k4": "없음", "k5": "없음", "k6": "없음", "k7": "없음"
+                    }
+                if len(st.session_state.review_df[st.session_state.review_df['sentiment'] == 'negative']) > 0:
+                    negative_keywords = safe_eval("extract_negative_keywords(st.session_state.review_df)")
+                else:
+                    negative_keywords = {
+                        "k1": "없음", "k2": "없음", "k3": "없음", "k4": "없음", "k5": "없음", "k6": "없음", "k7": "없음"
+                    }
+
                 col1, col2 = st.columns(2)
                 with col1:
                     st.markdown("#### 긍정적인 의견 👍")
@@ -535,16 +613,23 @@ if st.session_state.rec_button_clicked:
                         st.markdown(f"- {v}")
                 st.divider()
                 plot_sentiment_ratio_per_day(st.session_state.review_df[['sentiment', 'date']])
+                for q in st.session_state.rec_q_list:
+                    st.button(q, on_click=rec_click_button, args=[q])
+
 
         else:
-            full_response = st.write_stream(stream_message(st.session_state.review_df, user_message))
+            search_results = search_reviews(user_message)
+            print([x.page_content for x in search_results])
+            full_response = st.write_stream(stream_message([x.page_content for x in search_results], user_message))
             st.session_state.messages.append({"role": "assistant", "content": full_response})
             for q in st.session_state.rec_q_list:
                 st.button(q, on_click=rec_click_button, args=[q])
 
-
 # Accept user input
 if user_message := st.chat_input("Send Message"):
+
+    log_user_question(user_message)
+
     # Add user message to chat history
     st.session_state.messages.append({"role": "user", "content": user_message})
     # Display user message in chat message container
@@ -559,7 +644,7 @@ if user_message := st.chat_input("Send Message"):
             if places:
                 st.markdown("검색 결과는 다음과 같습니다. 해당하는 업체명을 선택해주세요.")
                 for num, name, adr in places:
-                    if len(adr) > 0 :
+                    if len(adr) > 0:
                         button_str = f"{name} - {adr}"
                     else:
                         button_str = name
@@ -568,7 +653,51 @@ if user_message := st.chat_input("Send Message"):
                 st.markdown("검색 결과가 없습니다.")
     else:
         with st.chat_message("assistant"):
-            full_response = st.write_stream(stream_message(st.session_state.review_df, user_message))
-            st.session_state.messages.append({"role": "assistant", "content": full_response})
-            for q in st.session_state.rec_q_list:
-                st.button(q, on_click=rec_click_button, args=[q])
+            if ("감성" in user_message) and ("분석" in user_message):
+                with st.spinner("감성 분석 보고서 생성 중..."):
+                    st.session_state.rec_q_list.remove("감성 분석 보고서 생성해주세요.")
+                    st.session_state.review_df["sentiment"] = [classify_review(x) for x in
+                                                               st.session_state.review_df["content"].to_list()]
+                    st.markdown(f"{st.session_state.place_name}에 대한 감성 분석 보고서입니다!")
+                    st.markdown(f"#### 리뷰별 감성 분석 결과 (Solar Mini 파인튜닝 모델 사용)")
+                    styled_df = st.session_state.review_df[['content', 'sentiment']].style.applymap(sentiment_color,
+                                                                                                    subset=[
+                                                                                                        'sentiment'])
+                    st.dataframe(styled_df)
+
+                    st.divider()
+                    if len(st.session_state.review_df[st.session_state.review_df['sentiment'] == 'positive']) > 0:
+                        positive_keywords = safe_eval("extract_positive_keywords(st.session_state.review_df)")
+                    else:
+                        positive_keywords = {
+                            "k1": "없음", "k2": "없음", "k3": "없음", "k4": "없음", "k5": "없음", "k6": "없음", "k7": "없음"
+                        }
+                    if len(st.session_state.review_df[st.session_state.review_df['sentiment'] == 'negative']) > 0:
+                        negative_keywords = safe_eval("extract_negative_keywords(st.session_state.review_df)")
+                    else:
+                        negative_keywords = {
+                            "k1": "없음", "k2": "없음", "k3": "없음", "k4": "없음", "k5": "없음", "k6": "없음", "k7": "없음"
+                        }
+
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.markdown("#### 긍정적인 의견 👍")
+                        for k, v in positive_keywords.items():
+                            st.markdown(f"- {v}")
+
+                    with col2:
+                        st.markdown("#### 부정적인 의견 👎")
+                        for k, v in negative_keywords.items():
+                            st.markdown(f"- {v}")
+                    st.divider()
+                    plot_sentiment_ratio_per_day(st.session_state.review_df[['sentiment', 'date']])
+                    for q in st.session_state.rec_q_list:
+                        st.button(q, on_click=rec_click_button, args=[q])
+
+            else:
+                search_results = search_reviews(user_message)
+                print([x.page_content for x in search_results])
+                full_response = st.write_stream(stream_message([x.page_content for x in search_results], user_message))
+                st.session_state.messages.append({"role": "assistant", "content": full_response})
+                for q in st.session_state.rec_q_list:
+                    st.button(q, on_click=rec_click_button, args=[q])
