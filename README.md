@@ -93,10 +93,12 @@ Solar Tycoon is tailored specifically for Jeju’s local businesses, providing t
 
 ## Upstage API Integration
 
-Solar Tycoon extensively integrates the Upstage API to enhance the functionality of the platform. Below are the key integration points and examples:
+Solar Tycoon leverages the Upstage API to power various AI-driven functionalities within the platform. Below are the key integration points:
 
-1. **Sentiment Classification:**
-    The Upstage API is used to classify customer reviews as positive, neutral, or negative. The integration involves retrieving environment variables like the API key and model ID from the `.env` file. The sentiment classification process is implemented as follows:
+1. **Embedding for RAG (Retrieval-Augmented Generation):**
+    The Upstage API is used to generate embeddings for customer reviews, which are then stored in a vector database. These embeddings are crucial for retrieval-augmented generation (RAG) tasks, allowing the system to search and return relevant information from customer reviews in response to user queries.
+
+    Example implementation:
 
     ```python
     from langchain_upstage import UpstageEmbeddings
@@ -110,38 +112,9 @@ Solar Tycoon extensively integrates the Upstage API to enhance the functionality
     )
     ```
 
-    The Upstage embeddings are utilized in conjunction with a vector store for advanced retrieval and sentiment analysis tasks.
+    The generated embeddings are stored in a vector store and used to enhance search results and recommendations.
 
-2. **Keyword Extraction (Positive/Negative Keywords):**
-    The Upstage API plays a vital role in extracting the key positive and negative sentiments from customer reviews. The sentiment classification results are processed through the Upstage model to generate a list of key points.
-
-    Example for positive keyword extraction:
-
-    ```python
-    client = OpenAI(
-        api_key=os.getenv('UPSTAGE_API_KEY'),
-        base_url="https://api.upstage.ai/v1/solar"
-    )
-
-    stream = client.chat.completions.create(
-        model="solar-1-mini-chat",
-        messages=[
-            {
-                "role": "system",
-                "content": "Extract positive sentiments."
-            },
-            {
-                "role": "user",
-                "content": f"Positive reviews: {str(review_df[review_df['sentiment'] == 'positive']['content'].to_list())}"
-            }
-        ],
-        stream=True,
-    )
-    ```
-
-    The model processes the input and returns a JSON structure containing the extracted sentiments.
-
-3. **Response Generation:**
+2. **Response Generation:**
     For generating responses to user questions based on the reviews, the Upstage API is used in a streaming mode to ensure smooth interaction. The response is customized based on the user’s query, using context from the collected reviews.
 
     Example of streaming responses:
@@ -179,9 +152,55 @@ Solar Tycoon extensively integrates the Upstage API to enhance the functionality
                 yield chunk.choices[0].delta.content
     ```
 
-These integrations ensure that the Solar Tycoon platform provides accurate, context-aware, and user-friendly insights, powered by the robust capabilities of the Upstage API.
+3. **Sentiment Classification:**
+    Customer reviews are classified into positive, neutral, or negative categories using a Predibase model. This sentiment classification is essential for generating meaningful insights from the reviews. The classification process is handled by the following function:
 
-- **Adapter ID for Model Usage:** The adapter specified by `ADAPTER_ID` is used to fine-tune the model for sentiment classification tasks, ensuring high accuracy.
+    ```python
+    def classify_review(review):
+        url = "https://serving.app.predibase.com/7ea6d0/deployments/v2/llms/solar-1-mini-chat-240612/generate"
+
+        # Fetch the environment variables
+        adapter_id = os.getenv("ADAPTER_ID")
+        api_token = os.getenv("PREDIBASE_API_KEY")
+
+        if not adapter_id or not api_token:
+            raise ValueError("Environment variables ADAPTER_ID and PREDIBASE_API_TOKEN must be set")
+
+        input_prompt = f"""
+        system
+        다음은 해당 업체에 대한 소비자의 리뷰입니다. 해당 리뷰를 positive, neutral, negative 중 하나로 분류하세요.
+        review
+        {review}
+        classification
+        """
+
+        payload = {
+            "inputs": input_prompt,
+            "parameters": {
+                "adapter_id": adapter_id,
+                "adapter_source": "pbase",
+                "max_new_tokens": 20,
+                "temperature": 0.1
+            }
+        }
+
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_token}"
+        }
+
+        response = requests.post(url, data=json.dumps(payload), headers=headers)
+
+        try:
+            return eval(response.text)["generated_text"]
+        except Exception as e:
+            raise ValueError("Error in parsing response: " + str(e))
+    ```
+
+    The function sends a request to the Predibase model, which classifies the review into one of the sentiment categories (positive, neutral, negative) based on the specified input prompt and parameters.
+
+These integrations ensure that the Solar Tycoon platform provides accurate, context-aware, and user-friendly insights, powered by the robust capabilities of the Upstage API and Predibase models.
+
 
 ## License
 
