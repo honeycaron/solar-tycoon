@@ -1,6 +1,6 @@
 # Solar Tycoon
 
-[![GitHub Repo](https://img.shields.io/badge/GitHub-Repository-blue)](https://github.com/honeycaron/solar-tycoon.git)
+[![Demo Server](https://img.shields.io/badge/Demo-Server-brightgreen)](http://3.38.50.229:8501/) [![GitHub Repo](https://img.shields.io/badge/GitHub-Repository-blue)](https://github.com/honeycaron/solar-tycoon.git)
 
 ## Overview
 
