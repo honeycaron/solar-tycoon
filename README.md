@@ -2,6 +2,15 @@
 
 [![Demo Server](https://img.shields.io/badge/Demo-Server-brightgreen)](http://3.38.50.229:8501/) [![GitHub Repo](https://img.shields.io/badge/GitHub-Repository-blue)](https://github.com/honeycaron/solar-tycoon.git)
 
+## Table of Contents
+
+- [Overview](#overview)
+- [Installation](#installation)
+- [Usage](#usage)
+- [Upstage API Integration](#upstage-api-integration)
+- [License](#license)
+
+
 ## Overview
 
 **Solar Tycoon: AI-Powered Review Analyzer for Local Businesses**
@@ -33,13 +42,6 @@ The project utilizes cutting-edge technology, including real-time data processin
 
 Solar Tycoon is tailored specifically for Jeju’s local businesses, providing them with tools to boost customer satisfaction and adapt to market changes. By offering advanced AI solutions in an accessible format, the project supports digital transformation and promotes long-term economic growth in the region.
 
-## Table of Contents
-
-- [Overview](#overview)
-- [Installation](#installation)
-- [Usage](#usage)
-- [Upstage API Integration](#upstage-api-integration)
-- [License](#license)
 
 ## Installation
 
