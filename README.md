@@ -93,19 +93,93 @@ Solar Tycoon is tailored specifically for Jeju’s local businesses, providing t
 
 ## Upstage API Integration
 
-Solar Tycoon makes extensive use of the Upstage API for review classification and sentiment analysis. The integration is key to delivering high-quality insights for small business owners:
+Solar Tycoon extensively integrates the Upstage API to enhance the functionality of the platform. Below are the key integration points and examples:
 
-- **Review Classification Module:** The Upstage API is used for sentiment analysis and classification of customer reviews. The relevant code can be found in [`MY_리뷰_분석.py`](./MY_리뷰_분석.py).
-
-    Example Integration:
+1. **Sentiment Classification:**
+    The Upstage API is used to classify customer reviews as positive, neutral, or negative. The integration involves retrieving environment variables like the API key and model ID from the `.env` file. The sentiment classification process is implemented as follows:
 
     ```python
-    from upstage import UpstageAPI
+    from langchain_upstage import UpstageEmbeddings
     import os
+    import httpx
 
-    api = UpstageAPI(api_key=os.getenv("UPSTAGE_API_KEY"))
-    response = api.analyze_review("Sample review text")
+    embeddings = UpstageEmbeddings(
+        api_key=os.getenv('UPSTAGE_API_KEY'),
+        model="solar-embedding-1-large",
+        http_client=httpx.Client(verify=False)
+    )
     ```
+
+    The Upstage embeddings are utilized in conjunction with a vector store for advanced retrieval and sentiment analysis tasks.
+
+2. **Keyword Extraction (Positive/Negative Keywords):**
+    The Upstage API plays a vital role in extracting the key positive and negative sentiments from customer reviews. The sentiment classification results are processed through the Upstage model to generate a list of key points.
+
+    Example for positive keyword extraction:
+
+    ```python
+    client = OpenAI(
+        api_key=os.getenv('UPSTAGE_API_KEY'),
+        base_url="https://api.upstage.ai/v1/solar"
+    )
+
+    stream = client.chat.completions.create(
+        model="solar-1-mini-chat",
+        messages=[
+            {
+                "role": "system",
+                "content": "Extract positive sentiments."
+            },
+            {
+                "role": "user",
+                "content": f"Positive reviews: {str(review_df[review_df['sentiment'] == 'positive']['content'].to_list())}"
+            }
+        ],
+        stream=True,
+    )
+    ```
+
+    The model processes the input and returns a JSON structure containing the extracted sentiments.
+
+3. **Response Generation:**
+    For generating responses to user questions based on the reviews, the Upstage API is used in a streaming mode to ensure smooth interaction. The response is customized based on the user’s query, using context from the collected reviews.
+
+    Example of streaming responses:
+
+    ```python
+    def stream_message(review, user_message):
+        client = OpenAI(
+            api_key=os.getenv('UPSTAGE_API_KEY'),
+            base_url="https://api.upstage.ai/v1/solar"
+        )
+
+        stream = client.chat.completions.create(
+            model="solar-1-mini-chat",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are a review analysis AI. Answer in Korean unless specified otherwise."
+                },
+                {
+                    "role": "user",
+                    "content": f"""
+                    ###
+                    Store Name: {st.session_state.place_name}
+                    Review Information: {review}
+                    ###
+                    Question: {user_message}
+                    """
+                }
+            ],
+            stream=True,
+        )
+
+        for chunk in stream:
+            if chunk.choices[0].delta.content is not None:
+                yield chunk.choices[0].delta.content
+    ```
+
+These integrations ensure that the Solar Tycoon platform provides accurate, context-aware, and user-friendly insights, powered by the robust capabilities of the Upstage API.
 
 - **Adapter ID for Model Usage:** The adapter specified by `ADAPTER_ID` is used to fine-tune the model for sentiment classification tasks, ensuring high accuracy.
 
